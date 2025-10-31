@@ -23,7 +23,18 @@ namespace Jellyfin.Plugin.Danmu.Scrapers.Dandan.ExternalId
         public ExternalIdMediaType? Type => null;
 
         /// <inheritdoc />
-        public string UrlFormatString => "https://api.dandanplay.net/api/v2/bangumi/{0}";
+        public string UrlFormatString
+        {
+            get
+            {
+                var apiBaseUrl = Environment.GetEnvironmentVariable("DANDAN_API_BASE_URL");
+                if (!string.IsNullOrEmpty(apiBaseUrl))
+                {
+                    return $"{apiBaseUrl.TrimEnd('/')}/api/v2/bangumi/{{0}}";
+                }
+                return "https://api.dandanplay.net/api/v2/bangumi/{0}";
+            }
+        }
 
         /// <inheritdoc />
         public bool Supports(IHasProviderIds item) => item is Movie;

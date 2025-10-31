@@ -22,6 +22,7 @@ public class DandanApi : AbstractApi
 {
     const string API_ID = "";
     const string API_SECRET = "";
+    const string DEFAULT_API_BASE_URL = "https://api.dandanplay.net";
     private static readonly object _lock = new object();
     private DateTime lastRequestTime = DateTime.Now.AddDays(-1);
 
@@ -62,6 +63,36 @@ public class DandanApi : AbstractApi
     }
 
     /// <summary>
+    /// API 基础地址，可从环境变量 DANDAN_API_BASE_URL 获取，未设置时使用默认地址
+    /// </summary>
+    public string ApiBaseUrl
+    {
+        get
+        {
+            var apiBaseUrl = Environment.GetEnvironmentVariable("DANDAN_API_BASE_URL");
+            if (!string.IsNullOrEmpty(apiBaseUrl))
+            {
+                return apiBaseUrl.TrimEnd('/');
+            }
+
+            return DEFAULT_API_BASE_URL;
+        }
+    }
+
+    /// <summary>
+    /// 判断是否使用了自定义的 API 地址（即环境变量设置了不同的地址）
+    /// </summary>
+    public bool IsCustomApiUrl
+    {
+        get
+        {
+            var apiBaseUrl = Environment.GetEnvironmentVariable("DANDAN_API_BASE_URL");
+            return !string.IsNullOrEmpty(apiBaseUrl) && 
+                   !apiBaseUrl.TrimEnd('/').Equals(DEFAULT_API_BASE_URL, StringComparison.OrdinalIgnoreCase);
+        }
+    }
+
+    /// <summary>
     /// Initializes a new instance of the <see cref="DandanApi"/> class.
     /// </summary>
     /// <param name="loggerFactory">The <see cref="ILoggerFactory"/>.</param>
@@ -89,7 +120,7 @@ public class DandanApi : AbstractApi
         this.LimitRequestFrequently();
 
         keyword = HttpUtility.UrlEncode(keyword);
-        var url = $"https://api.dandanplay.net/api/v2/search/anime?keyword={keyword}";
+        var url = $"{ApiBaseUrl}/api/v2/search/anime?keyword={keyword}";
         var response = await this.Request(url, cancellationToken).ConfigureAwait(false);
         var result = await response.Content.ReadFromJsonAsync<SearchResult>(_jsonOptions, cancellationToken).ConfigureAwait(false);
         if (result != null && result.Success)
@@ -130,7 +161,7 @@ public class DandanApi : AbstractApi
             matchRequest["matchMode"] = "hashAndFileName";
         }
 
-        var url = "https://api.dandanplay.net/api/v2/match";
+        var url = $"{ApiBaseUrl}/api/v2/match";
         var response = await this.Request(url, HttpMethod.Post, matchRequest, cancellationToken).ConfigureAwait(false);
         var result = await response.Content.ReadFromJsonAsync<MatchResponseV2>(_jsonOptions, cancellationToken).ConfigureAwait(false);
         if (result != null && result.Success && result.Matches != null)
@@ -188,7 +219,7 @@ public class DandanApi : AbstractApi
             return anime;
         }
 
-        var url = $"https://api.dandanplay.net/api/v2/bangumi/{animeId}";
+        var url = $"{ApiBaseUrl}/api/v2/bangumi/{animeId}";
         var response = await this.Request(url, cancellationToken).ConfigureAwait(false);
 
         var result = await response.Content.ReadFromJsonAsync<AnimeResult>(_jsonOptions, cancellationToken).ConfigureAwait(false);
@@ -223,7 +254,7 @@ public class DandanApi : AbstractApi
 
         var withRelated = this.Config.WithRelatedDanmu ? "true" : "false";
         var chConvert = this.Config.ChConvert;
-        var url = $"https://api.dandanplay.net/api/v2/comment/{epId}?withRelated={withRelated}&chConvert={chConvert}";
+        var url = $"{ApiBaseUrl}/api/v2/comment/{epId}?withRelated={withRelated}&chConvert={chConvert}";
         var response = await this.Request(url, cancellationToken).ConfigureAwait(false);
         var result = await response.Content.ReadFromJsonAsync<CommentResult>(_jsonOptions, cancellationToken).ConfigureAwait(false);
         if (result != null)
@@ -258,14 +289,18 @@ public class DandanApi : AbstractApi
 
     protected async Task<HttpResponseMessage> Request(string url, HttpMethod method, object? content = null, CancellationToken cancellationToken = default)
     {
-        var timestamp = DateTimeOffset.Now.ToUnixTimeSeconds();
-        var signature = GenerateSignature(url, timestamp);
+        var hasApiCredentials = !string.IsNullOrEmpty(ApiID) && !string.IsNullOrEmpty(ApiSecret);
 
         HttpResponseMessage response;
         using (var request = new HttpRequestMessage(method, url)) {
-            request.Headers.Add("X-AppId", ApiID);
-            request.Headers.Add("X-Signature", signature);
-            request.Headers.Add("X-Timestamp", timestamp.ToString());
+            if (hasApiCredentials)
+            {
+                var timestamp = DateTimeOffset.Now.ToUnixTimeSeconds();
+                var signature = GenerateSignature(url, timestamp);
+                request.Headers.Add("X-AppId", ApiID);
+                request.Headers.Add("X-Signature", signature);
+                request.Headers.Add("X-Timestamp", timestamp.ToString());
+            }
             if (method == HttpMethod.Post && content != null)
             {
                 request.Content = JsonContent.Create(content, null, _jsonOptions);
@@ -279,10 +314,6 @@ public class DandanApi : AbstractApi
 
     protected string GenerateSignature(string url, long timestamp)
     {
-        if (string.IsNullOrEmpty(ApiID) || string.IsNullOrEmpty(ApiSecret))
-        {
-            throw new Exception("弹弹接口缺少API_ID和API_SECRET");
-        }
         var uri = new Uri(url);
         var path = uri.AbsolutePath;
         var str = $"{ApiID}{timestamp}{path}{ApiSecret}";

@@ -33,7 +33,36 @@ public class Dandan : AbstractScraper
 
     public override string ProviderId => ScraperProviderId;
 
-    public override bool IsDeprecated => string.IsNullOrEmpty(this._api.ApiID) || string.IsNullOrEmpty(this._api.ApiSecret);
+    /// <summary>
+    /// 判断弹弹play API 是否已配置
+    /// 满足以下任一条件即视为已配置：
+    /// 1. 同时设置了 API ID 和 API Secret
+    /// 2. 设置了自定义 API 地址（通过环境变量 DANDAN_API_BASE_URL）
+    /// </summary>
+    /// <returns>如果已配置返回 true，否则返回 false</returns>
+    private bool IsApiConfigured()
+    {
+        // 如果同时设置了 ID 和 Secret，则视为已配置
+        var hasApiCredentials = !string.IsNullOrEmpty(_api.ApiID) && !string.IsNullOrEmpty(_api.ApiSecret);
+        if (hasApiCredentials)
+        {
+            return true;
+        }
+
+        // 如果设置了自定义 API 地址，也视为已配置
+        if (_api.IsCustomApiUrl)
+        {
+            return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// 判断该弹幕源是否已废弃
+    /// 如果 API 未配置，则视为已废弃（不启用）
+    /// </summary>
+    public override bool IsDeprecated => !IsApiConfigured();
 
     public override async Task<List<ScraperSearchInfo>> Search(BaseItem item)
     {
@@ -225,7 +254,7 @@ public class Dandan : AbstractScraper
         var comments = await _api.GetCommentsAsync(cid, CancellationToken.None).ConfigureAwait(false);
         var danmaku = new ScraperDanmaku();
         danmaku.ChatId = cid;
-        danmaku.ChatServer = "api.dandanplay.net";
+        danmaku.ChatServer = new Uri(_api.ApiBaseUrl).Host;
         foreach (var comment in comments)
         {
             var danmakuText = new ScraperDanmakuText();

@@ -2,7 +2,7 @@ name: "🚀 Publish Plugin"
 
 on:
   push:
-    tags: ["*"]
+    tags: ["v*"]
 
 env:
   dotnet-version: 8.0.x
